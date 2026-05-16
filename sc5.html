@@ -1260,7 +1260,6 @@
                     const name = input.value.trim();
                     if (name) {
                         toggleVideoCategory(name, true, selectedVideoKey, projectPath);
-                        renderCategoriesPanel();
                     }
                 };
 
@@ -1294,7 +1293,6 @@
                         ev.stopPropagation();
                         toggleVideoCategory(cat, true, selectedVideoKey, projectPath);
                         dropdown.style.display = 'none';
-                        renderCategoriesPanel();
                     };
                     dropdown.appendChild(item);
                 });
@@ -4587,6 +4585,10 @@
             editModeRotatedVideos.clear();
             initialVideoCategories.clear();
             projectCategories.clear();
+            selectedVideoKey = null;
+            categoriesDataVersion++;
+            lastRowNumbersState = { checked: null, count: 0, canvasId: null };
+            lastRenderedCategoriesState = { key: null, version: -1, width: null };
             thumbnailContainer.innerHTML = '';
             allVideoFiles = [];
 
@@ -5083,6 +5085,10 @@
             thumbnailContainer.innerHTML = '';
             canvases.clear();
             shortcutSelections.clear();
+            selectedVideoKey = null;
+            categoriesDataVersion++;
+            lastRowNumbersState = { checked: null, count: 0, canvasId: null };
+            lastRenderedCategoriesState = { key: null, version: -1, width: null };
             createdObjectUrls.forEach(URL.revokeObjectURL);
             createdObjectUrls = [];
 
@@ -5298,6 +5304,10 @@
             thumbnailContainer.innerHTML = '';
             canvases.clear();
             shortcutSelections.clear();
+            selectedVideoKey = null;
+            categoriesDataVersion++;
+            lastRowNumbersState = { checked: null, count: 0, canvasId: null };
+            lastRenderedCategoriesState = { key: null, version: -1, width: null };
             createdObjectUrls.forEach(URL.revokeObjectURL);
             createdObjectUrls = [];
 
