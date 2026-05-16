@@ -1106,7 +1106,7 @@
             const showNumbers = showNumbersCheckbox.checked;
             const containers = document.querySelectorAll('.thumbnails-container');
             const rowCount = containers.length;
-            
+
             if (lastRowNumbersState.checked === showNumbers &&
                 lastRowNumbersState.count === rowCount &&
                 lastRowNumbersState.canvasId === activeCanvasId) {
@@ -5458,6 +5458,9 @@
                     rowDiv.dataset.projectPath = project.path;
                     rowDiv.dataset.projectName = project.name;
 
+                    let currentIndex = parseInt(localStorage.getItem(`playlist-thumb-index-${project.path}`)) || 0;
+                    if (currentIndex >= candidateVideos.length) currentIndex = 0;
+
                     rowDiv.appendChild(createRowActionBar('Playlist Item', project.path, candidateVideos[currentIndex].subfolder, rowDiv, project.name));
 
                     const navContainer = document.createElement('div');
@@ -5495,9 +5498,6 @@
                     rowDiv.appendChild(thumbnailsContainer);
 
                     canvasElements.push(rowDiv);
-
-                    let currentIndex = parseInt(localStorage.getItem(`playlist-thumb-index-${project.path}`)) || 0;
-                    if (currentIndex >= candidateVideos.length) currentIndex = 0;
 
                     const projectRotationData = await getRotationData(project.handle);
 
