@@ -1100,21 +1100,52 @@
         const panelContent = document.getElementById('panel-content');
         let lastUsedMoveTarget = localStorage.getItem("lastUsedMoveTarget");
 
+        let lastRowNumbersState = { checked: null, count: 0, canvasId: null };
+        let categoriesDataVersion = 0;
         function updateRowNumbers() {
             const showNumbers = showNumbersCheckbox.checked;
-            mainContainer.classList.toggle('show-numbers', showNumbers);
             const containers = document.querySelectorAll('.thumbnails-container');
-            
-            // First, remove any existing numbers to avoid duplicates
-            document.querySelectorAll('.row-number').forEach(num => num.remove());
+            const rowCount = containers.length;
 
-            if (showNumbers) {
-                containers.forEach((container, index) => {
-                    const numberSpan = document.createElement('span');
+            if (lastRowNumbersState.checked === showNumbers &&
+                lastRowNumbersState.count === rowCount &&
+                lastRowNumbersState.canvasId === activeCanvasId) {
+                return;
+            }
+
+            lastRowNumbersState.checked = showNumbers;
+            lastRowNumbersState.count = rowCount;
+            lastRowNumbersState.canvasId = activeCanvasId;
+
+            mainContainer.classList.toggle('show-numbers', showNumbers);
+
+            if (!showNumbers) {
+                const existing = document.querySelectorAll('.row-number');
+                if (existing.length > 0) {
+                    existing.forEach(num => num.remove());
+                }
+                return;
+            }
+
+            containers.forEach((container, index) => {
+                const expectedText = (index + 1).toString();
+                let numberSpan = container.querySelector(':scope > .row-number');
+                if (!numberSpan) {
+                    numberSpan = document.createElement('span');
                     numberSpan.className = 'row-number';
-                    numberSpan.textContent = index + 1;
+                    numberSpan.textContent = expectedText;
                     container.insertBefore(numberSpan, container.firstChild);
-                });
+                } else if (numberSpan.textContent !== expectedText) {
+                    numberSpan.textContent = expectedText;
+                }
+            });
+
+            // Clean up any extra row numbers if rows were removed from the current canvas
+            const allNumbers = document.querySelectorAll('.row-number');
+            if (allNumbers.length > rowCount) {
+                for (let i = rowCount; i < allNumbers.length; i++) {
+                    allNumbers[i].remove();
+                }
             }
         }
 
@@ -1132,7 +1163,7 @@
             let newWidth = rect.right - e.clientX;
             newWidth = Math.max(100, Math.min(600, newWidth));
             categoriesPanel.style.width = newWidth + 'px';
-            layoutLandscapeThumbnails();
+            requestThrottledLayout(true);
         });
 
         window.addEventListener('mouseup', () => {
@@ -1140,6 +1171,7 @@
                 isResizingPanel = false;
                 document.body.style.cursor = '';
                 localStorage.setItem('categoriesPanelWidth', categoriesPanel.style.width);
+                layoutLandscapeThumbnails(); // Final full layout
             }
         });
 
@@ -1151,13 +1183,24 @@
             if (enabled) {
                 const savedWidth = localStorage.getItem('categoriesPanelWidth');
                 if (savedWidth) categoriesPanel.style.width = savedWidth;
-                renderCategoriesPanel();
             }
-            layoutLandscapeThumbnails();
+            requestThrottledLayout();
         });
 
         function renderCategoriesPanel() {
             if (!enableCategoriesPanelCheckbox.checked) return;
+
+            const currentWidth = categoriesPanel.style.width;
+            if (lastRenderedCategoriesState.key === selectedVideoKey &&
+                lastRenderedCategoriesState.version === categoriesDataVersion &&
+                lastRenderedCategoriesState.width === currentWidth) {
+                return;
+            }
+
+            lastRenderedCategoriesState.key = selectedVideoKey;
+            lastRenderedCategoriesState.version = categoriesDataVersion;
+            lastRenderedCategoriesState.width = currentWidth;
+
             panelContent.innerHTML = '';
             
             if (!selectedVideoKey) {
@@ -1217,7 +1260,6 @@
                     const name = input.value.trim();
                     if (name) {
                         toggleVideoCategory(name, true, selectedVideoKey, projectPath);
-                        renderCategoriesPanel();
                     }
                 };
 
@@ -1251,7 +1293,6 @@
                         ev.stopPropagation();
                         toggleVideoCategory(cat, true, selectedVideoKey, projectPath);
                         dropdown.style.display = 'none';
-                        renderCategoriesPanel();
                     };
                     dropdown.appendChild(item);
                 });
@@ -1555,6 +1596,7 @@
                 cats.delete(catName);
             }
 
+            categoriesDataVersion++;
             if (enableCategoriesPanelCheckbox.checked) {
                 renderCategoriesPanel();
             }
@@ -1587,6 +1629,7 @@
                 localStorage.setItem('globalSavedCategories', JSON.stringify(Array.from(globalSavedCategories)));
             }
             
+            categoriesDataVersion++;
             topCategoriesDropdown.style.display = 'none';
             if (enableCategoriesPanelCheckbox.checked) {
                 renderCategoriesPanel();
@@ -2452,7 +2495,7 @@
                     customSizeInput.style.display = 'none';
                 }
                 saveCurrentSizeForProject();
-                layoutLandscapeThumbnails();
+                requestThrottledLayout();
             });
             vSizeSelector.addEventListener('change', () => {
                 if (hSizeSelector.value === 'custom' || vSizeSelector.value === 'custom') {
@@ -2462,11 +2505,14 @@
                     customSizeInput.style.display = 'none';
                 }
                 saveCurrentSizeForProject();
-                layoutLandscapeThumbnails();
+                requestThrottledLayout();
             });
             customSizeInput.addEventListener('input', () => {
                 saveCurrentSizeForProject();
-                layoutLandscapeThumbnails();
+                requestThrottledLayout(true);
+            });
+            customSizeInput.addEventListener('change', () => {
+                requestThrottledLayout();
             });
             window.addEventListener('resize', debouncedLayout);
             
@@ -2744,11 +2790,7 @@
             }
 
             populateCanvasDropdown();
-            layoutLandscapeThumbnails(); // Re-layout after switching canvas
-            updateRowNumbers(); // Ensure numbers are shown if enabled
-            if (enableCategoriesPanelCheckbox.checked) {
-                renderCategoriesPanel();
-            }
+            requestThrottledLayout(); // Re-layout after switching canvas
         }
 
         function populateCanvasDropdown() {
@@ -3194,10 +3236,29 @@
         let layoutTimeout;
         function debouncedLayout() {
             clearTimeout(layoutTimeout);
-            layoutTimeout = setTimeout(layoutLandscapeThumbnails, 100);
+            layoutTimeout = setTimeout(() => requestThrottledLayout(), 100);
         }
 
-        function layoutLandscapeThumbnails() {
+        let isLayoutPending = false;
+        let pendingLayoutLightweight = false;
+        let lastRenderedCategoriesState = { key: null, version: -1, width: null };
+        function requestThrottledLayout(lightweight = false) {
+            if (isLayoutPending) {
+                // If a full layout is already pending, keep it full
+                if (pendingLayoutLightweight && !lightweight) {
+                    pendingLayoutLightweight = false;
+                }
+                return;
+            }
+            isLayoutPending = true;
+            pendingLayoutLightweight = lightweight;
+            requestAnimationFrame(() => {
+                layoutLandscapeThumbnails(pendingLayoutLightweight);
+                isLayoutPending = false;
+            });
+        }
+
+        function layoutLandscapeThumbnails(lightweight = false) {
             const elements = document.querySelectorAll('.landscape-row, .project-header, hr');
             const showNumbers = showNumbersCheckbox.checked;
             const paddingLR = showNumbers ? 50 : 20;
@@ -3282,25 +3343,30 @@
                         const isCurrentlyVertical = effH > effW;
                         const currentScale = isCurrentlyVertical ? vScale : hScale;
 
-                        const scaledWidth = effW * currentScale;
-                        const scaledHeight = effH * currentScale;
+                        const scaledWidth = Math.round(effW * currentScale);
+                        const scaledHeight = Math.round(effH * currentScale);
                         
-                        wrapper.style.width = scaledWidth + 'px';
-                        wrapper.style.height = scaledHeight + 'px';
+                        const sw = scaledWidth + 'px';
+                        const sh = scaledHeight + 'px';
+
+                        if (wrapper.style.width !== sw) wrapper.style.width = sw;
+                        if (wrapper.style.height !== sh) wrapper.style.height = sh;
 
                         if (isRotated90) {
-                            thumb.style.width = scaledHeight + 'px';
-                            thumb.style.height = scaledWidth + 'px';
+                            if (thumb.style.width !== sh) thumb.style.width = sh;
+                            if (thumb.style.height !== sw) thumb.style.height = sw;
                         } else {
-                            thumb.style.width = scaledWidth + 'px';
-                            thumb.style.height = scaledHeight + 'px';
+                            if (thumb.style.width !== sw) thumb.style.width = sw;
+                            if (thumb.style.height !== sh) thumb.style.height = sh;
                         }
                     });
                 }
             });
-            updateRowNumbers();
-            if (enableCategoriesPanelCheckbox.checked) {
-                renderCategoriesPanel();
+            if (!lightweight) {
+                updateRowNumbers();
+                if (enableCategoriesPanelCheckbox.checked) {
+                    renderCategoriesPanel();
+                }
             }
             requestAnimationFrame(updateContentSpacer);
         }
@@ -4519,6 +4585,10 @@
             editModeRotatedVideos.clear();
             initialVideoCategories.clear();
             projectCategories.clear();
+            selectedVideoKey = null;
+            categoriesDataVersion++;
+            lastRowNumbersState = { checked: null, count: 0, canvasId: null };
+            lastRenderedCategoriesState = { key: null, version: -1, width: null };
             thumbnailContainer.innerHTML = '';
             allVideoFiles = [];
 
@@ -4960,7 +5030,7 @@
                                 img.onload = () => {
                                     img.dataset.originalWidth = img.width;
                                     img.dataset.originalHeight = img.height;
-                                    debouncedLayout();
+                                    requestThrottledLayout();
                                     resolve();
                                 };
                                 img.onerror = reject;
@@ -5015,6 +5085,10 @@
             thumbnailContainer.innerHTML = '';
             canvases.clear();
             shortcutSelections.clear();
+            selectedVideoKey = null;
+            categoriesDataVersion++;
+            lastRowNumbersState = { checked: null, count: 0, canvasId: null };
+            lastRenderedCategoriesState = { key: null, version: -1, width: null };
             createdObjectUrls.forEach(URL.revokeObjectURL);
             createdObjectUrls = [];
 
@@ -5172,6 +5246,7 @@
                                     img.onload = () => {
                                         img.dataset.originalWidth = img.width;
                                         img.dataset.originalHeight = img.height;
+                                        requestThrottledLayout();
                                         resolve();
                                     };
                                     img.onerror = reject;
@@ -5229,6 +5304,10 @@
             thumbnailContainer.innerHTML = '';
             canvases.clear();
             shortcutSelections.clear();
+            selectedVideoKey = null;
+            categoriesDataVersion++;
+            lastRowNumbersState = { checked: null, count: 0, canvasId: null };
+            lastRenderedCategoriesState = { key: null, version: -1, width: null };
             createdObjectUrls.forEach(URL.revokeObjectURL);
             createdObjectUrls = [];
 
@@ -5379,6 +5458,9 @@
                     rowDiv.dataset.projectPath = project.path;
                     rowDiv.dataset.projectName = project.name;
 
+                    let currentIndex = parseInt(localStorage.getItem(`playlist-thumb-index-${project.path}`)) || 0;
+                    if (currentIndex >= candidateVideos.length) currentIndex = 0;
+
                     rowDiv.appendChild(createRowActionBar('Playlist Item', project.path, candidateVideos[currentIndex].subfolder, rowDiv, project.name));
 
                     const navContainer = document.createElement('div');
@@ -5416,9 +5498,6 @@
                     rowDiv.appendChild(thumbnailsContainer);
 
                     canvasElements.push(rowDiv);
-
-                    let currentIndex = parseInt(localStorage.getItem(`playlist-thumb-index-${project.path}`)) || 0;
-                    if (currentIndex >= candidateVideos.length) currentIndex = 0;
 
                     const projectRotationData = await getRotationData(project.handle);
 
@@ -5471,7 +5550,7 @@
                             img.onload = () => {
                                 img.dataset.originalWidth = img.width;
                                 img.dataset.originalHeight = img.height;
-                                layoutLandscapeThumbnails();
+                                requestThrottledLayout();
                             };
 
                             img.addEventListener('click', (e) => {
