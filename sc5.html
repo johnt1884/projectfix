@@ -1132,7 +1132,7 @@
             let newWidth = rect.right - e.clientX;
             newWidth = Math.max(100, Math.min(600, newWidth));
             categoriesPanel.style.width = newWidth + 'px';
-            layoutLandscapeThumbnails();
+            requestThrottledLayout(true);
         });
 
         window.addEventListener('mouseup', () => {
@@ -1140,6 +1140,7 @@
                 isResizingPanel = false;
                 document.body.style.cursor = '';
                 localStorage.setItem('categoriesPanelWidth', categoriesPanel.style.width);
+                layoutLandscapeThumbnails(); // Final full layout
             }
         });
 
@@ -1151,9 +1152,8 @@
             if (enabled) {
                 const savedWidth = localStorage.getItem('categoriesPanelWidth');
                 if (savedWidth) categoriesPanel.style.width = savedWidth;
-                renderCategoriesPanel();
             }
-            layoutLandscapeThumbnails();
+            requestThrottledLayout();
         });
 
         function renderCategoriesPanel() {
@@ -2452,7 +2452,7 @@
                     customSizeInput.style.display = 'none';
                 }
                 saveCurrentSizeForProject();
-                layoutLandscapeThumbnails();
+                requestThrottledLayout();
             });
             vSizeSelector.addEventListener('change', () => {
                 if (hSizeSelector.value === 'custom' || vSizeSelector.value === 'custom') {
@@ -2462,11 +2462,14 @@
                     customSizeInput.style.display = 'none';
                 }
                 saveCurrentSizeForProject();
-                layoutLandscapeThumbnails();
+                requestThrottledLayout();
             });
             customSizeInput.addEventListener('input', () => {
                 saveCurrentSizeForProject();
-                layoutLandscapeThumbnails();
+                requestThrottledLayout(true);
+            });
+            customSizeInput.addEventListener('change', () => {
+                requestThrottledLayout();
             });
             window.addEventListener('resize', debouncedLayout);
             
@@ -2744,11 +2747,7 @@
             }
 
             populateCanvasDropdown();
-            layoutLandscapeThumbnails(); // Re-layout after switching canvas
-            updateRowNumbers(); // Ensure numbers are shown if enabled
-            if (enableCategoriesPanelCheckbox.checked) {
-                renderCategoriesPanel();
-            }
+            requestThrottledLayout(); // Re-layout after switching canvas
         }
 
         function populateCanvasDropdown() {
@@ -3194,10 +3193,28 @@
         let layoutTimeout;
         function debouncedLayout() {
             clearTimeout(layoutTimeout);
-            layoutTimeout = setTimeout(layoutLandscapeThumbnails, 100);
+            layoutTimeout = setTimeout(() => requestThrottledLayout(), 100);
         }
 
-        function layoutLandscapeThumbnails() {
+        let isLayoutPending = false;
+        let pendingLayoutLightweight = false;
+        function requestThrottledLayout(lightweight = false) {
+            if (isLayoutPending) {
+                // If a full layout is already pending, keep it full
+                if (pendingLayoutLightweight && !lightweight) {
+                    pendingLayoutLightweight = false;
+                }
+                return;
+            }
+            isLayoutPending = true;
+            pendingLayoutLightweight = lightweight;
+            requestAnimationFrame(() => {
+                layoutLandscapeThumbnails(pendingLayoutLightweight);
+                isLayoutPending = false;
+            });
+        }
+
+        function layoutLandscapeThumbnails(lightweight = false) {
             const elements = document.querySelectorAll('.landscape-row, .project-header, hr');
             const showNumbers = showNumbersCheckbox.checked;
             const paddingLR = showNumbers ? 50 : 20;
@@ -3298,9 +3315,11 @@
                     });
                 }
             });
-            updateRowNumbers();
-            if (enableCategoriesPanelCheckbox.checked) {
-                renderCategoriesPanel();
+            if (!lightweight) {
+                updateRowNumbers();
+                if (enableCategoriesPanelCheckbox.checked) {
+                    renderCategoriesPanel();
+                }
             }
             requestAnimationFrame(updateContentSpacer);
         }
@@ -4960,7 +4979,7 @@
                                 img.onload = () => {
                                     img.dataset.originalWidth = img.width;
                                     img.dataset.originalHeight = img.height;
-                                    debouncedLayout();
+                                    requestThrottledLayout();
                                     resolve();
                                 };
                                 img.onerror = reject;
@@ -5172,6 +5191,7 @@
                                     img.onload = () => {
                                         img.dataset.originalWidth = img.width;
                                         img.dataset.originalHeight = img.height;
+                                        requestThrottledLayout();
                                         resolve();
                                     };
                                     img.onerror = reject;
@@ -5471,7 +5491,7 @@
                             img.onload = () => {
                                 img.dataset.originalWidth = img.width;
                                 img.dataset.originalHeight = img.height;
-                                layoutLandscapeThumbnails();
+                                requestThrottledLayout();
                             };
 
                             img.addEventListener('click', (e) => {
