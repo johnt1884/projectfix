@@ -1100,21 +1100,52 @@
         const panelContent = document.getElementById('panel-content');
         let lastUsedMoveTarget = localStorage.getItem("lastUsedMoveTarget");
 
+        let lastRowNumbersState = { checked: null, count: 0, canvasId: null };
+        let categoriesDataVersion = 0;
         function updateRowNumbers() {
             const showNumbers = showNumbersCheckbox.checked;
-            mainContainer.classList.toggle('show-numbers', showNumbers);
             const containers = document.querySelectorAll('.thumbnails-container');
+            const rowCount = containers.length;
             
-            // First, remove any existing numbers to avoid duplicates
-            document.querySelectorAll('.row-number').forEach(num => num.remove());
+            if (lastRowNumbersState.checked === showNumbers &&
+                lastRowNumbersState.count === rowCount &&
+                lastRowNumbersState.canvasId === activeCanvasId) {
+                return;
+            }
 
-            if (showNumbers) {
-                containers.forEach((container, index) => {
-                    const numberSpan = document.createElement('span');
+            lastRowNumbersState.checked = showNumbers;
+            lastRowNumbersState.count = rowCount;
+            lastRowNumbersState.canvasId = activeCanvasId;
+
+            mainContainer.classList.toggle('show-numbers', showNumbers);
+
+            if (!showNumbers) {
+                const existing = document.querySelectorAll('.row-number');
+                if (existing.length > 0) {
+                    existing.forEach(num => num.remove());
+                }
+                return;
+            }
+
+            containers.forEach((container, index) => {
+                const expectedText = (index + 1).toString();
+                let numberSpan = container.querySelector(':scope > .row-number');
+                if (!numberSpan) {
+                    numberSpan = document.createElement('span');
                     numberSpan.className = 'row-number';
-                    numberSpan.textContent = index + 1;
+                    numberSpan.textContent = expectedText;
                     container.insertBefore(numberSpan, container.firstChild);
-                });
+                } else if (numberSpan.textContent !== expectedText) {
+                    numberSpan.textContent = expectedText;
+                }
+            });
+
+            // Clean up any extra row numbers if rows were removed from the current canvas
+            const allNumbers = document.querySelectorAll('.row-number');
+            if (allNumbers.length > rowCount) {
+                for (let i = rowCount; i < allNumbers.length; i++) {
+                    allNumbers[i].remove();
+                }
             }
         }
 
@@ -1158,6 +1189,18 @@
 
         function renderCategoriesPanel() {
             if (!enableCategoriesPanelCheckbox.checked) return;
+
+            const currentWidth = categoriesPanel.style.width;
+            if (lastRenderedCategoriesState.key === selectedVideoKey &&
+                lastRenderedCategoriesState.version === categoriesDataVersion &&
+                lastRenderedCategoriesState.width === currentWidth) {
+                return;
+            }
+
+            lastRenderedCategoriesState.key = selectedVideoKey;
+            lastRenderedCategoriesState.version = categoriesDataVersion;
+            lastRenderedCategoriesState.width = currentWidth;
+
             panelContent.innerHTML = '';
             
             if (!selectedVideoKey) {
@@ -1555,6 +1598,7 @@
                 cats.delete(catName);
             }
 
+            categoriesDataVersion++;
             if (enableCategoriesPanelCheckbox.checked) {
                 renderCategoriesPanel();
             }
@@ -1587,6 +1631,7 @@
                 localStorage.setItem('globalSavedCategories', JSON.stringify(Array.from(globalSavedCategories)));
             }
             
+            categoriesDataVersion++;
             topCategoriesDropdown.style.display = 'none';
             if (enableCategoriesPanelCheckbox.checked) {
                 renderCategoriesPanel();
@@ -3198,6 +3243,7 @@
 
         let isLayoutPending = false;
         let pendingLayoutLightweight = false;
+        let lastRenderedCategoriesState = { key: null, version: -1, width: null };
         function requestThrottledLayout(lightweight = false) {
             if (isLayoutPending) {
                 // If a full layout is already pending, keep it full
@@ -3299,18 +3345,21 @@
                         const isCurrentlyVertical = effH > effW;
                         const currentScale = isCurrentlyVertical ? vScale : hScale;
 
-                        const scaledWidth = effW * currentScale;
-                        const scaledHeight = effH * currentScale;
+                        const scaledWidth = Math.round(effW * currentScale);
+                        const scaledHeight = Math.round(effH * currentScale);
                         
-                        wrapper.style.width = scaledWidth + 'px';
-                        wrapper.style.height = scaledHeight + 'px';
+                        const sw = scaledWidth + 'px';
+                        const sh = scaledHeight + 'px';
+
+                        if (wrapper.style.width !== sw) wrapper.style.width = sw;
+                        if (wrapper.style.height !== sh) wrapper.style.height = sh;
 
                         if (isRotated90) {
-                            thumb.style.width = scaledHeight + 'px';
-                            thumb.style.height = scaledWidth + 'px';
+                            if (thumb.style.width !== sh) thumb.style.width = sh;
+                            if (thumb.style.height !== sw) thumb.style.height = sw;
                         } else {
-                            thumb.style.width = scaledWidth + 'px';
-                            thumb.style.height = scaledHeight + 'px';
+                            if (thumb.style.width !== sw) thumb.style.width = sw;
+                            if (thumb.style.height !== sh) thumb.style.height = sh;
                         }
                     });
                 }
