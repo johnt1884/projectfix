@@ -3196,9 +3196,9 @@
             const isPlaylist = mode === 'playlist';
             const isPlaylistRoot = mode === 'playlist-root' || mode === 'update-playlist-root';
 
-            if (deleteShortcutsBtn) deleteShortcutsBtn.style.display = 'none'; 
+            if (elements.deleteShortcutsBtn) elements.deleteShortcutsBtn.style.display = 'none';
             if (elements.shortcutScriptBtn) elements.shortcutScriptBtn.style.display = (isPlaylist || isPlaylistRoot) ? 'none' : 'inline-block';
-            if (createPlaylistBtn) createPlaylistBtn.style.display = (isPlaylist || isPlaylistRoot) ? 'inline-block' : 'none';
+            if (elements.createPlaylistBtn) elements.createPlaylistBtn.style.display = (isPlaylist || isPlaylistRoot) ? 'inline-block' : 'none';
 
             checkboxContainers.forEach(el => el.style.display = 'flex');
             elements.canvasSelect.style.display = (isDirectory || isSc || isRootSc || isScNew || isLatestVideos || isPlaylist || isPlaylistRoot) ? 'inline-block' : 'none';
@@ -5403,8 +5403,8 @@
             return data;
         };
 
+        window.App = App;
         App.init();
-window.App = App;
     </script>
 </body>
 </html>
